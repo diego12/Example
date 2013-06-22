@@ -1,0 +1,106 @@
+
+############################################################################################
+#
+# Mixture of two univariate normals
+#
+############################################################################################
+#
+# HEDIBERT FREITAS LOPES
+# Associate Professor of Econometrics and Statistics
+# The University of Chicago Booth School of Business
+# 5807 South Woodlawn Avenue
+# Chicago, Illinois, 60637
+# Email : hlopes@ChicagoBooth.edu
+# URL: http://faculty.chicagobooth.edu/hedibert.lopes/research/
+#
+############################################################################################
+mix2normals = function(y,a,b,mu0,tau20,nu0,nu0s02,mu,z,M){
+  n     = length(y)
+  nn    = rep(0,2)
+  draws = matrix(0,M,5)
+  for (iter in 1:M){
+    nn[1] = sum(z==1)
+    nn[2] = n-nn[1]
+    # sampling sigma2's
+    sy2    = c(sum((y[z==1]-mu[1])^2),sum((y[z==2]-mu[2])^2))
+    sigma2 = 1/rgamma(2,(nu0+nn)/2,(nu0s02+sy2)/2)
+    # sampling mu's
+    var  = 1/(1/tau20+nn/sigma2)
+    sy   = c(sum(y[z==1]),sum(y[z==2]))
+    mean = var*(mu0/tau20+sy/sigma2)
+    mu   = rnorm(2,mean,sqrt(var))
+    # sampling p
+    pi = rbeta(1,a+nn[1],b+nn[2])
+    # sampling z's
+    pz1 = pi*dnorm(y,mu[1],sqrt(sigma2[1]))
+    pz2 = (1-pi)*dnorm(y,mu[2],sqrt(sigma2[2]))
+    pz  = pz1/(pz1+pz2)
+    for (i in 1:n) 
+      z[i] = sample(1:2,size=1,prob=c(pz[i],1-pz[i]))
+    draws[iter,] = c(pi,mu,sigma2)
+  }
+  return(draws)
+}
+
+
+#################################################################
+#  Bowmaker et al (1985) analyse data on the peak sensitivity wavelengths 
+#  for individual microspectrophotometric records on a small set of monkey's 
+#  eyes. Data for one monkey are given below.
+#################################################################
+
+# Data
+y = c(529.0,530.0,532.0,533.1,533.4,533.6,533.7,534.1,534.8,535.3,
+    535.4,535.9,536.1,536.3,536.4,536.6,537.0,537.4,537.5,538.3,
+    538.5,538.6,539.4,539.6,540.4,540.8,542.0,542.8,543.0,543.5,
+    543.8,543.9,545.3,546.2,548.8,548.7,548.9,549.0,549.4,549.9,
+    550.6,551.2,551.4,551.5,551.6,552.8,552.9,553.2)
+n = length(y)
+
+# Hyperparameters
+a      = 1
+b      = 1 
+nu0    = rep(3,2)
+nu0s02 = 20*nu0
+mu0    = rep(535,550)
+tau20  = rep(1000,2)
+
+# Initial values
+z        = rep(1,n)
+z[y>545] = 2
+mu       = c(mean(y[z==1]),mean(y[z==2]))
+
+# MCMC
+set.seed(13579)
+run=mix2normals(y,a,b,mu0,tau20,nu0,nu0s02,mu,z,2000)
+
+# Posterior parameter summary
+names = c("pi","mu1","mu2","sigma21","sigma22")
+
+png(file="posterior.png",height=600,width=800)
+par(mfrow=c(3,5))
+for (i in 1:5) 
+  ts.plot(run[,i],xlab="iteration",ylab="",main=names[i])
+for (i in 1:5) 
+  acf(run[,i],ylab="",main="")
+for (i in 1:5) 
+  hist(run[,i],xlab="",ylab="",main="")
+dev.off()
+
+png(file="scatterplot.png",height=600,width=800)
+par(mfrow=c(1,1))
+plot(run[,2:3],xlab="mu1",ylab="mu2",main="")
+dev.off()
+
+# Posterior predictive
+N     = 200
+yy    = seq(510,570,length=N)
+pred  = rep(0,N)
+probs = cbind(run[,1],1-run[,1])
+for (i in 1:N) 
+  pred[i] = mean(apply(probs*dnorm(yy[i],run[,2:3],sqrt(run[,4:5])),1,sum))
+
+png(file="postpred.png",height=600,width=800)
+hist(y,nclass=12,xlab="",ylab="",main="Posterior predictive",prob=T,xlim=range(yy))
+lines(yy,pred,col=2,lwd=2)
+dev.off()
