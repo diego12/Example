@@ -1,0 +1,105 @@
+#######################################
+#  compute log posterior distribution
+#######################################
+
+logpost = function(X,mu,sg){
+	lf = sum(dnorm(X,mu,sg,log=T))
+	return(lf - log(sg))
+}
+
+samplemu=function(X,mu,sg,a=2) {
+ 	mustar = mu+runif(1,-a,a)
+ 	accept = 0
+	alpha = logpost(X,mustar,sg)-
+		logpost(X,mu,sg)
+	u = log(runif(1,0,1))
+	accept = (u<alpha)
+	mu = accept*mustar + (1-accept)*mu
+	list(mu=mu,accept=accept)
+}
+
+samplesg=function(X,mu,sg,a=2) {
+ 	sgstar = abs(sg+runif(1,-a,a))
+ 	accept = 0
+	alpha = logpost(X,mu,sgstar)-
+		logpost(X,mu,sg)
+	u = log(runif(1,0,1))
+	accept = (u<alpha)
+	sg = accept*sgstar + (1-accept)*sg
+	list(sg=sg,accept=accept)
+}
+
+samplen = function(X,n=1000,mu=0,sg=1,
+  a=2,b=2) {
+
+# Initialization phase
+  mus = rep(NaN,n)
+  sgs = rep(NaN,n)
+  acceptmu = 0
+  acceptsg = 0
+
+# Sampling phase
+  for(i in 1:n) {
+    mul = samplemu(X,mu,sg,a)
+    mus[i] = mu = mul$mu
+    acceptmu = acceptmu + mul$accept
+    sgl = samplesg(X,mu,sg,b)
+    sgs[i] = sg = sgl$sg
+    acceptsg = acceptsg + sgl$accept
+  }
+  class(mus)="samp"
+  class(sgs)="samp"
+  list(mu=mus,acceptmu=acceptmu,
+    sd=sgs,acceptsd=acceptsg)
+}
+
+#######################################
+#	generate data
+#######################################
+X = rnorm(15,3,5) #mean 3, sd 5
+
+############################################
+#	This function plots a histogram for 
+#  objects in class samp
+#
+############################################
+
+hist.samp = function(vals, varname="Variable", adj=2)
+{
+	x=unclass(vals)
+	quartz(varname)
+	hist(x,50,freq=F,main=paste("Histogram of", varname), xlab=varname)
+	lines(density(x,adjust=adj))
+	rug(x)
+}
+
+#############################################	
+#	This function plots the time history 
+#  of a sample in class samp
+#
+############################################
+
+plot.samp = function(vals,varname="x")
+{
+	x=unclass(vals)
+	quartz(varname)
+	plot(x,xlab="Sample Number",ylab=varname)
+}
+
+#######################################
+#	run program and display results
+#######################################
+run = function(X,n=1000,mu=0,sg=1,
+  a=2,b=2) {
+	z=samplen(X,n,mu,sg,a,b)
+	hist(z$mu) #mu marginal
+	hist(z$sd) #sd marginal
+	plot(z$mu) #look at sequence
+	plot(z$sd) #look at sequence
+	cat("mubar = ",mean(z$mu),"\n") 	#posterior mean of mu
+	cat("sdbar = ",mean(z$sd),"\n") 	#posterior mean of sd
+	cat("sd(X)+2*(median(z$sd)-sd(X)) = ",sd(X)+2*(median(z$sd)-sd(X)),"\n")
+	invisible(z)
+}
+
+w = run(X)
