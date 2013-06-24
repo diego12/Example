@@ -1,0 +1,77 @@
+############################################
+#  
+#  Produce one M-H sample. 
+#	Independently sample from gammas on u and b
+#	reject if u<b, otherwise accept
+#	(Note: Ratio of p/q is constant by definition)
+#
+############################################
+sample1 = function(s,b,Non,Noff) {
+  bprop = rgamma(1,shape=Noff)
+  repeat{
+  		uprop=rgamma(1,shape=Non)
+  		if(uprop>=bprop) break
+  	}
+  list(s=uprop-bprop,b=bprop)
+}
+ 
+############################################
+#	
+#  produce a sample of size n
+#
+############################################
+samplen = function(n,s,b,Non,Noff) {
+    Ss = rep(NaN,n)
+    Bs = rep(NaN,n)
+    for(i in 1:n) {
+     		z = sample1(s,b,Non,Noff)
+  			Ss[i] = s = z$s
+  			Bs[i] = b = z$b 
+    }
+    class(Ss) = "samp"
+    class(Bs) = "samp"
+    list(ss=Ss,bs=Bs)
+}
+
+############################################
+#	This function plots a histogram for 
+#  objects in class samp
+#
+############################################
+
+hist.samp = function(vals, varname="Variable", adj=2)
+{
+	x=unclass(vals)
+	quartz(varname)
+	hist(x,50,freq=F,main=paste("Histogram of", varname), xlab=varname)
+	lines(density(x,adjust=adj))
+	rug(x)
+}
+
+############################################
+#	This function plots the time history 
+#  of a sample in class samp
+#
+############################################
+
+plot.samp = function(vals,varname="x")
+{
+	x=unclass(vals)
+	quartz(varname)
+	plot(x,xlab="Sample Number",ylab=varname)
+}
+
+############################################
+#	
+#  run a sample, with parameters
+#
+############################################
+run = function(n=10000,s=0,b=0,Non=16,Noff=9){     
+	z = samplen(n,s,b,Non,Noff)
+	hist(z$ss)
+	plot(z$ss)
+	invisible(z)
+}
+
+run()
+
