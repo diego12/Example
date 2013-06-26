@@ -1,0 +1,97 @@
+
+
+#Intial power calculation
+#Model: y[1],...,y[n]~N(mu,sigma)
+#Calculate power for inference on mu
+
+N<-100           #Number of MC reps
+n<-100           #Sample size
+sigma<-1         #Error standard devation
+pri.mn.des<-1    #Design prior for mu
+pri.sd.des<-1
+pri.mn.anal<-0   #Analysis prior for mu
+pri.sd.anal<-10
+delta.low<- -0.5 #Indifference zone
+delta.high<-0.5
+
+#Store results:
+L<-U<-Indiff<-Power<-rep(0,N)
+
+#Make a plot:
+plot(0,0,xlim=c(-5,5),ylim=c(1,N),col=0,
+     xlab="95% interval",ylab="Replication")
+lines(c(delta.low,delta.low),c(1,N))
+lines(c(delta.high,delta.high),c(1,N))
+
+#Generate and analyze N data sets:
+for(rep in 1:N){
+   #Generate data:
+    mu<-rnorm(1,pri.mn.des,pri.sd.des)
+    y<-rnorm(n,mu,sigma)
+   
+   #Compute posterior 95% interval:
+    post.var<-1/(n/sigma^2+1/pri.sd.anal^2)
+    post.mn<-post.var*(pri.mn.anal/pri.sd.anal^2+sum(y)/sigma^2)
+    L[rep]<-post.mn-1.96*sqrt(post.var)
+    U[rep]<-post.mn+1.96*sqrt(post.var)
+    lines(c(L[rep],U[rep]),c(rep,rep))
+
+    Indiff[rep]<-L[rep]>delta.low & U[rep]<delta.high 
+    Power[rep]<-L[rep]>delta.high 
+}
+
+print("Power to detect equivalence")
+print(mean(Indiff))
+
+print("Power to detect a positive effect")
+print(mean(Power))
+
+
+   
+
+
+
+
+#Interim monitoring:
+#We have observed y_1,...,y_n1 and we're deciding whether 
+#to collect n2 more observations
+
+#the first n1 observations are
+ n1<-100
+ sigma<-1
+ y.prev<-rnorm(n1,0,sigma)
+
+#Calculate power assuming
+
+ N<-1000           #Number of MC reps
+ n2<-100           #Sample size
+ n<-n1+n2
+
+ pri.mn.anal<-0   #Analysis prior for mu
+ pri.sd.anal<-10
+
+#The design prior is the posterior of mu|y.prev and the 
+#analysis prior
+
+ pri.var.des<-1/(n/sigma^2+1/pri.sd.anal^2)
+ pri.mn.des<-post.var*(pri.mn.anal/pri.sd.anal^2+sum(y.prev)/sigma^2)
+
+#Store results:
+Power<-rep(0,N)
+
+#Generate and analyze N data sets:
+for(rep in 1:N){
+   #Generate data:
+    mu<-rnorm(1,pri.mn.des,sqrt(pri.var.des))
+    y<-c(y.prev,rnorm(n2,mu,sigma))
+   
+   #Compute posterior 95% interval:
+    post.var<-1/(n/sigma^2+1/pri.sd.anal^2)
+    post.mn<-post.var*(pri.mn.anal/pri.sd.anal^2+sum(y)/sigma^2)
+    Power[rep]<-(post.mn-1.96*sqrt(post.var) > 0)
+}
+
+print("Power")
+print(mean(Power))
+
+
