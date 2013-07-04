@@ -1,0 +1,66 @@
+
+# Make up the example data
+logistic.map = function(x) {4*x*(1-x)}
+low.x = runif(75,0,0.70)
+hi.x = runif(25,0.80,1.0)
+main.y = logistic.map(c(low.x,hi.x)) + rnorm(100,0,0.05)
+outlier.x = runif(10,0.85,0.9)
+outlier.y = runif(10,0.85,0.9)
+all.x = c(low.x,hi.x,outlier.x)
+all.y = c(main.y,outlier.y)
+
+# produces first figure
+  # Re-run to produce most of the other figures
+plot(all.x,all.y,xlab="x",ylab="y")
+rug(all.x,side=1,col="grey")
+rug(all.y,side=2,col="grey")
+
+
+# add the sample mean
+abline(h=mean(all.y),lty=3)
+
+
+# add the regression line
+fit.all = lm(all.y~all.x)
+abline(fit.all)
+
+# Add k-nearest-neighbors curves
+library(knnflex)
+all.dist = knn.dist(c(all.x,seq(from=0,to=1,length.out=100)))
+  # Need to set up a matrix of distances between data points with knn.dist, and
+  # then actually get values from knn.predict --- see help files to both for
+  # more information
+all.nn1.predict = knn.predict(1:110,111:210,all.y,all.dist,k=1)
+abline(h=mean(all.y),lty=2)
+lines(seq(from=0,to=1,length.out=100),all.nn1.predict,col="blue")
+all.nn3.predict = knn.predict(1:110,111:210,all.y,all.dist,k=3)
+lines(seq(from=0,to=1,length.out=100),all.nn3.predict,col="red")
+all.nn5.predict = knn.predict(1:110,111:210,all.y,all.dist,k=5)
+lines(seq(from=0,to=1,length.out=100),all.nn5.predict,col="green")
+all.nn20.predict = knn.predict(1:110,111:210,all.y,all.dist,k=20)
+lines(seq(from=0,to=1,length.out=100),all.nn20.predict,col="purple")
+
+# Add kernel-smoothing curves
+lines(ksmooth(all.x, all.y, "normal", bandwidth=2),col="blue",lty=2)
+lines(ksmooth(all.x, all.y, "normal", bandwidth=1),col="red",lty=2)
+lines(ksmooth(all.x, all.y, "normal", bandwidth=0.1),col="green",lty=2)
+lines(ksmooth(all.x, all.y, "box", bandwidth=2),col="blue")
+lines(ksmooth(all.x, all.y, "box", bandwidth=1),col="red")
+lines(ksmooth(all.x, all.y, "box", bandwidth=0.1),col="green")
+
+# Define a function which is nearly constant, but with rapid small
+# oscillations
+ugly.func = function(x) {1 + 0.01*sin(100*x)}
+# Scatter-plot of ugly.func + noise
+r = runif(100)
+r.y = ugly.func(r) + rnorm(length(r),0,0.5)
+plot(r,r.y,xlab="x",ylab="y")
+# Add the true regression function
+curve(ugly.func,add=TRUE)
+# Add the mean line in red
+abline(h=mean(r.y),col="red")
+sine.fit = lm(r.y ~ 1+ sin(100*r))
+fitted.sine = function(x) {
+  sine.fit$coefficients[1] + sine.fit$coefficients[2]*sin(100*x)
+}
+curve(fitted.sine(x),col="blue",add=TRUE)
