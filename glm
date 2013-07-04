@@ -1,0 +1,239 @@
+
+library(faraway)
+# Snoqualmie Falls precipitation example
+  # Data consists of precipitation, in 1/100 of an inch, for each day for
+  # each year from 1948 through 1983, at Snoqualmie Falls, Wash.
+# load:
+snoqualmie <- read.csv("snoqualmie.csv",header=FALSE)
+# Let's get rid of the year breaks
+snoqualmie <- unlist(snoqualmie)
+# Most years have NAs for the 366th day, let's remove that
+snoqualmie <- na.omit(snoqualmie)
+
+# Look at the histogram,
+plot(hist(snoqualmie,n=50,probability=TRUE),xlab="Precipitation (1/100 inch)")
+rug(snoqualmie,col="grey")
+# and the scatter-plot of successive values
+plot(snoqualmie[-length(snoqualmie)],snoqualmie[-1],
+     xlab="Precipitation today (1/100 inch)",
+     ylab="Precipitation tomorrow (1/100 inch)",cex=0.1)
+rug(snoqualmie[-length(snoqualmie)],side=1,col="grey")
+rug(snoqualmie[-1],side=2,col="grey")
+# both show big spikes at zero precipitation.  We'll try predicting whether
+# there will be any precipitation tomorrow, from how much there was today.
+
+# Re-shape so we have pairs of sequential days
+vector.to.pairs <- function(v) {
+  v <- as.numeric(v)
+  n <- length(v)
+  return(cbind(v[-1],v[-n]))
+}
+
+snoq.pairs <- vector.to.pairs(snoqualmie)
+colnames(snoq.pairs) <- c("tomorrow","today")
+snoq <- as.data.frame(snoq.pairs)
+
+# Fit the logistic regression model
+snoq.logistic <- glm((tomorrow > 0) ~ today, data=snoq, family=binomial)
+# Look at coeffcients etc. --- positive coefficient on today's precipitation,
+# as we'd expected from the scatterplot and background knowledge
+summary(snoq.logistic)
+
+# Plot data, plus predicted probabilities with confidence interval on predicted
+# probability
+plot((tomorrow>0)~today,data=snoq,xlab="Precipitation today (1/100 inch)",
+     ylab="Positive precipitation tomorrow?")
+rug(snoq$today,col="grey")
+
+# Fake data to give visually-nice, evenly-spaced points for plotting
+data.plot <- data.frame(today=(0:500))
+# Work out confidence interval on the logit scale (where things are roughly
+# Gaussian), then transform to probability scale
+logistic.predictions <- predict(snoq.logistic,newdata=data.plot,se.fit=TRUE)
+lines(0:500,ilogit(logistic.predictions$fit))
+lines(0:500,ilogit(logistic.predictions$fit+1.96*logistic.predictions$se.fit),
+      lty=2)
+lines(0:500,ilogit(logistic.predictions$fit-1.96*logistic.predictions$se.fit),
+      lty=2)
+
+# Simple spline smoothing for comparison
+snoq.spline <- smooth.spline(x=snoq$today,y=(snoq$tomorrow>0))
+# Add the spline to the plot
+lines(snoq.spline,col="red")
+  # Pretty good match to the logistic regression up to about 1.3 inches
+
+# Try a GAM, which moves the smoother _inside_ the likelihood model
+library(mgcv)
+  # Note: you may need to un-load the gam library with detach()
+snoq.gam <- gam((tomorrow>0)~s(today),data=snoq,family=binomial)
+# Add the GAM to the plot (again using the logit-scale trick)
+gam.predictions <- predict.gam(snoq.gam,newdata=data.plot,se.fit=TRUE)
+lines(0:500,ilogit(gam.predictions$fit),col="blue")
+lines(0:500,ilogit(gam.predictions$fit+1.96*gam.predictions$se.fit),col="blue",
+      lty=2)
+lines(0:500,ilogit(gam.predictions$fit-1.96*gam.predictions$se.fit),col="blue",
+      lty=2)
+  # Note: similar to the simple spline smoothing, but not quite identical!
+    # Also note: huge error bands at the right, where there's very little data
+
+# Width of GLM confidence bands:
+plot(0:500,ilogit(logistic.predictions$fit)
+           -ilogit(logistic.predictions$fit-1.96*logistic.predictions$se.fit),
+    type="l",col="blue",xlab="Precipitation today (1/100 inch)",
+    main="Difference in probability between prediction\n
+and confidence limit for prediction",
+    ylab = expression(paste(Delta,"probability")))
+lines(0:500,ilogit(logistic.predictions$fit+1.96*logistic.predictions$se.fit)
+            -ilogit(logistic.predictions$fit))
+  # Notice that these are asymmetric, and actually narrower at really large
+  # x than at moderate x; why?
+
+
+# Significant mis-specification for the GLM?
+# Observed difference in deviance
+diff.dev.obs <- snoq.logistic$deviance - snoq.gam$deviance
+
+# Simulate from the fitted logistic regression model for Snoqualmie
+# Presumes: fitted values of the model are probabilities.
+snoq.sim <- function(model=snoq.logistic) {
+  fitted.probs <- fitted(model)
+  n <- length(fitted.probs)
+  new.binary <- rbinom(n,size=1,prob=fitted.probs)
+  return(new.binary)
+}
+
+# Simulate from fitted logistic regression, re-fit logistic regression and
+# GAM, calculate difference in deviances
+diff.dev <- function(model=snoq.logistic,x=snoq[,2]) {
+  y.new <- snoq.sim(model)
+  GLM.dev <- glm(y.new ~ x,family=binomial)$deviance
+  GAM.dev <- gam(y.new ~ s(x),family=binomial)$deviance
+  return(GLM.dev-GAM.dev)
+}
+
+# The following takes ~1500 seconds on my computer; reduce number of replicates
+# to taste
+null.dist.of.diff.dev <- replicate(1000,diff.dev())
+p.value <- (1+sum(null.dist.of.diff.dev > diff.dev.obs))/(1+length(null.dist.of.diff.dev))
+  # p-value is < 10^-3; the observed difference is much bigger than what's
+  # generated by simulating from the logistic model
+
+# What went wrong with the logistic model?  Inspecting the plots, the spline
+# and the GAM both predict lower probabilities at X=0 than the GLM does, and
+# their predicted probabilities increase very steeply there.
+# GLM's predicted probability of precipitation following a dry day:
+ilogit(snoq.logistic$coefficients[1])
+  # which is 0.502
+# Actual frequency
+mean(snoq$tomorrow[snoq$today==0]>0)
+  # which is 0.470
+# Since there are a _lot_ of dry days (also about 47%), a couple of percentage
+# points difference in probability here has a big contribution in the
+# likelihood.
+# Therefore: Try telling the GLM that no precipitation today is a special value
+
+# Expand the data with an extra column, indicating whether today was dry or
+# not
+snoq2 <- data.frame(snoq,dry=ifelse(snoq$today==0,1,0))
+# Fit a new logistic model with that dummy variable
+snoq2.logistic <- glm((tomorrow > 0) ~ today + dry,data=snoq2,family=binomial)
+# GAM ditto
+snoq2.gam <- gam((tomorrow > 0) ~ s(today) + dry,data=snoq2,family=binomial)
+
+# Plot the new models
+plot((tomorrow>0)~today,data=snoq,xlab="Precipitation today (1/100 inch)",
+     ylab="Positive precipitation tomorrow?")
+rug(snoq$today,side=1,col="grey")
+
+# Need to add a "dry" column to the fake data for plotting
+data.plot=data.frame(data.plot,dry=ifelse(data.plot$today==0,1,0))
+logistic.predictions2 <- predict(snoq2.logistic,newdata=data.plot,se.fit=TRUE)
+lines(0:500,ilogit(logistic.predictions2$fit))
+lines(0:500,ilogit(logistic.predictions2$fit+1.96*logistic.predictions2$se.fit),
+      lty=2)
+lines(0:500,ilogit(logistic.predictions2$fit-1.96*logistic.predictions2$se.fit),
+      lty=2)
+gam.predictions2 <- predict.gam(snoq2.gam,newdata=data.plot,se.fit=TRUE)
+lines(0:500,ilogit(gam.predictions2$fit),col="blue")
+lines(0:500,ilogit(gam.predictions2$fit+1.96*gam.predictions2$se.fit),
+      col="blue",lty=2)
+lines(0:500,ilogit(gam.predictions2$fit-1.96*gam.predictions2$se.fit),
+      col="blue",lty=2)
+  # Notice that the GLM and the GAM now coincide almost exactly in their
+  # predictions.
+
+# Look at snoq2.gam to make sure I didn't accidentally forget to turn on
+# smoothing!
+summary(snoq2.gam)
+plot(snoq2.gam)
+  # The "today" term is in fact a non-parametric smooth with a little bit of
+  # curvature
+
+# Difference still significant?
+diff.dev.obs2 <- snoq2.logistic$deviance - snoq2.gam$dev
+diff.dev.2 <- function(model=snoq2.logistic,x=snoq2[,-1]) {
+  y.new <- snoq.sim(model)
+  sim.data <- data.frame(x,tomorrow=y.new)
+  GLM.dev <- glm(tomorrow ~ today + dry,data=sim.data,family=binomial)$deviance
+  GAM.dev <- gam(tomorrow ~ s(today)+dry,data=sim.data,family=binomial)$deviance
+  return(GLM.dev-GAM.dev)
+}
+null.dist.of.diff.dev2 <- replicate(100,diff.dev.2())
+p.value <- (1+sum(null.dist.of.diff.dev2 > diff.dev.obs2))/(1+length(null.dist.of.diff.dev2))
+# As close to 1 as computation time allows
+
+# So let's look at calibration
+# First, what's the predicted probability of precipitation after dry days?
+predict(snoq2.logistic,newdata=data.frame(today=0,dry=1),type="response")
+  # Matches the actual frequency to seven decimal places --- it should, we've
+  # introduced a coefficient to do just this!
+
+# Look at the histogram of predicted probabilities
+hist(fitted(snoq2.logistic))
+  # Big gap between 0.47 and 0.55
+# Are we calibrated between say 0.55 and 0.56?
+mean(snoq$tomorrow[(fitted(snoq2.logistic) >= 0.55)
+                   & (fitted(snoq2.logistic) < 0.56)] > 0)
+  # Gives 0.547, pretty reasonable
+# Write a function to do this less manually
+frequency.vs.probability <- function(p.lower,p.upper=p.lower+0.01,
+                                     model=snoq2.logistic,
+                                     data=(snoq$tomorrow>0)) {
+  # Presume that fitted values are probabilities
+  fitted.probs <- fitted(model)
+  # Which rows of the data have fitted probabilities in our range of interest?
+  indices <- (fitted.probs >= p.lower) & (fitted.probs < p.upper)
+  # For plotting purposes, what's our average predicted probability over this
+  # range?
+  ave.prob <- mean(fitted.probs[indices])
+  # How big a standard error should we see for binomial data with this predicted
+  # probability?
+    # Rough calculation, could improve by taking account of variation in
+    # predicted probabilities, not reliable if difference between p.lower
+    # and p.upper was substantial
+  se <- sqrt(ave.prob*(1-ave.prob)/sum(indices))
+  # How often does the event actually happen?
+    # Presumes data is either 0/1 or TRUE/FALSE valued
+  frequency <- mean(data[indices])
+  out <- list(frequency=frequency,ave.prob=ave.prob,se=se)
+  return(out)
+}
+
+# Look at the whole range of probabilities between 0.55 and 0.74 (because
+# that's most of our predictions, and there's a gap about 0.75 which is
+# annoying to deal with)
+f.vs.p <- sapply((55:74)/100,frequency.vs.probability)
+# Re-shape the data to remove some R weirdness
+f.vs.p <- data.frame(frequency=unlist(f.vs.p["frequency",]),
+                     ave.prob=unlist(f.vs.p["ave.prob",]),
+                     se=unlist(f.vs.p["se",]))
+
+# Calibration plot
+plot(f.vs.p$ave.prob,f.vs.p$frequency,xlim=c(0,1),ylim=c(0,1),
+     xlab="Predicted probabilities",ylab="Observed frequencies")
+rug(fitted(snoq2.logistic),col="grey")
+abline(0,1,col="grey")
+segments(x0=f.vs.p$ave.prob,y0=f.vs.p$ave.prob-1.96*f.vs.p$se,
+         y1=f.vs.p$ave.prob+1.96*f.vs.p$se)
+# Vertical lines are (approximate) 95% sampling intervals for the frequency,
+# given the predicted probability and the number of observations
